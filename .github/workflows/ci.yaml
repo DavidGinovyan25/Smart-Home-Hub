@@ -1,0 +1,46 @@
+name: CI 
+
+on: 
+  push:
+    branches:
+      - main
+      - develop
+      - feature
+  pull_request:
+    branches:
+      - develop
+      - main
+
+permissions:
+  contents: read
+
+  
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Check docker compose
+        working-directory: deployments
+        run: docker compose config
+        
+  docker:
+    name: Docker
+    runs-on: ubuntu-latest
+    needs: verify    
+    steps:
+      - name: Checkout repository
+      
+        uses: actions/checkout@v4
+        
+      - name: Build Docker images
+        working-directory: deployments
+        run: docker compose build
+
+    
+  
+    
