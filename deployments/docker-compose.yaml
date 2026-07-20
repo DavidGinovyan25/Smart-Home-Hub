@@ -1,0 +1,211 @@
+name: smart-home-hub
+
+x-kafka-environment: &kafka-environment
+  CLUSTER_ID: ${CLUSTER_ID}
+
+x-kafka-healthcheck: &kafka-healthcheck
+  test:
+    [
+      "CMD",
+      "/opt/kafka/bin/kafka-broker-api-versions.sh",
+      "--bootstrap-server",
+      "localhost:9092",
+    ]
+  start_period: 30s
+  interval: 15s
+  timeout: 5s
+  retries: 10
+
+x-cassandra-healthcheck: &cassandra-healthcheck
+  test: ["CMD-SHELL", "cqlsh localhost 9042 -e 'DESCRIBE KEYSPACES' >/dev/null 2>&1"]
+  start_period: 180s
+  interval: 20s
+  timeout: 20s
+  retries: 15
+
+services:
+
+  kafka-node-1:
+    image: apache/kafka:4.3.1
+    container_name: kafka-node-1
+    hostname: kafka-node-1
+    restart: unless-stopped
+    environment: *kafka-environment
+    ports:
+      - "29092:29092"
+    volumes:
+      - ./kafka/node-1/server.properties:/mnt/shared/config/server.properties:ro
+      - kafka-node-1:/var/lib/kafka/data
+    networks:
+      - kafka-net
+    healthcheck: *kafka-healthcheck
+
+  kafka-node-2:
+    image: apache/kafka:4.3.1
+    container_name: kafka-node-2
+    hostname: kafka-node-2
+    restart: unless-stopped
+    environment: *kafka-environment
+    ports:
+      - "39092:29092"
+    volumes:
+      - ./kafka/node-2/server.properties:/mnt/shared/config/server.properties:ro
+      - kafka-node-2:/var/lib/kafka/data
+    networks:
+      - kafka-net
+    healthcheck: *kafka-healthcheck
+
+  kafka-node-3:
+    image: apache/kafka:4.3.1
+    container_name: kafka-node-3
+    hostname: kafka-node-3
+    restart: unless-stopped
+    environment: *kafka-environment
+    ports:
+      - "49092:29092"
+    volumes:
+      - ./kafka/node-3/server.properties:/mnt/shared/config/server.properties:ro
+      - kafka-node-3:/var/lib/kafka/data
+    networks:
+      - kafka-net
+    healthcheck: *kafka-healthcheck
+
+  kafka-init:
+    image: apache/kafka:4.3.1
+    container_name: kafka-init
+    depends_on:
+      kafka-node-1:
+        condition: service_healthy
+      kafka-node-2:
+        condition: service_healthy
+      kafka-node-3:
+        condition: service_healthy
+    volumes:
+      - ./kafka/topics.sh:/topics.sh:ro
+    entrypoint:
+      - bash
+      - /topics.sh
+    networks:
+      - kafka-net
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: smart-home-hub
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-node-1:9092,kafka-node-2:9092,kafka-node-3:9092
+    depends_on:
+      kafka-node-1:
+        condition: service_healthy
+      kafka-node-2:
+        condition: service_healthy
+      kafka-node-3:
+        condition: service_healthy
+    networks:
+      - kafka-net
+
+  mqtt:
+    image: eclipse-mosquitto:2
+    container_name: mqtt
+    hostname: mqtt
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mqtt/config:/mosquitto/config:ro
+      - mqtt-data:/mosquitto/data
+      - mqtt-log:/mosquitto/log
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mosquitto_sub -h localhost -p 1883 -t '$$SYS/broker/version' -C 1 -W 5 >/dev/null 2>&1",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+    networks:
+      - mosquitto-net
+
+  cassandra-node-1:
+    image: cassandra:5.0
+    user: cassandra
+    entrypoint: ["cassandra", "-f"]
+    container_name: cassandra-node-1
+    hostname: cassandra-node-1
+    restart: unless-stopped
+    ports:
+      - "9042:9042"
+    volumes:
+      - ./cassandra/node-1/cassandra.yaml:/etc/cassandra/cassandra.yaml:ro
+      - ./cassandra/cassandra-rackdc.properties:/etc/cassandra/cassandra-rackdc.properties:ro
+      - cassandra-node-1:/var/lib/cassandra
+    networks:
+      cassandra-net:
+        ipv4_address: 172.28.0.11
+    healthcheck: *cassandra-healthcheck
+
+  cassandra-node-2:
+    image: cassandra:5.0
+    user: cassandra
+    entrypoint: ["cassandra", "-f"]
+    container_name: cassandra-node-2
+    hostname: cassandra-node-2
+    restart: unless-stopped
+    ports:
+      - "9142:9042"
+    depends_on:
+      cassandra-node-1:
+        condition: service_healthy
+    volumes:
+      - ./cassandra/node-2/cassandra.yaml:/etc/cassandra/cassandra.yaml:ro
+      - ./cassandra/cassandra-rackdc.properties:/etc/cassandra/cassandra-rackdc.properties:ro
+      - cassandra-node-2:/var/lib/cassandra
+    networks:
+      cassandra-net:
+        ipv4_address: 172.28.0.12
+    healthcheck: *cassandra-healthcheck
+
+  cassandra-node-3:
+    image: cassandra:5.0
+    user: cassandra
+    entrypoint: ["cassandra", "-f"]
+    container_name: cassandra-node-3
+    hostname: cassandra-node-3
+    restart: unless-stopped
+    ports:
+      - "9242:9042"
+    depends_on:
+      cassandra-node-1:
+        condition: service_healthy
+      cassandra-node-2:
+        condition: service_healthy
+    volumes:
+      - ./cassandra/node-3/cassandra.yaml:/etc/cassandra/cassandra.yaml:ro
+      - ./cassandra/cassandra-rackdc.properties:/etc/cassandra/cassandra-rackdc.properties:ro
+      - cassandra-node-3:/var/lib/cassandra
+    networks:
+      cassandra-net:
+        ipv4_address: 172.28.0.13
+    healthcheck: *cassandra-healthcheck
+  
+networks:
+  kafka-net:
+  mosquitto-net:
+  cassandra-net:
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
+
+volumes:
+  kafka-node-1:
+  kafka-node-2:
+  kafka-node-3:
+  cassandra-node-1:
+  cassandra-node-2:
+  cassandra-node-3:
+  mqtt-data:
+  mqtt-log:
