@@ -1,7 +1,12 @@
 name: smart-home-hub
 
 x-kafka-environment: &kafka-environment
-  CLUSTER_ID: ${CLUSTER_ID}
+  CLUSTER_ID: 5L6g3nShT-eMCtK--X86sw
+  KAFKA_HEAP_OPTS: "-Xms256m -Xmx256m"
+
+x-cassandra-environment: &cassandra-environment
+  MAX_HEAP_SIZE: 256M
+  HEAP_NEWSIZE: 100M
 
 x-kafka-healthcheck: &kafka-healthcheck
   test:
@@ -139,6 +144,7 @@ services:
     restart: unless-stopped
     ports:
       - "9042:9042"
+    environment: *cassandra-environment
     volumes:
       - ./cassandra/node-1/cassandra.yaml:/etc/cassandra/cassandra.yaml:ro
       - ./cassandra/cassandra-rackdc.properties:/etc/cassandra/cassandra-rackdc.properties:ro
@@ -157,6 +163,7 @@ services:
     restart: unless-stopped
     ports:
       - "9142:9042"
+    environment: *cassandra-environment
     depends_on:
       cassandra-node-1:
         condition: service_healthy
@@ -178,6 +185,7 @@ services:
     restart: unless-stopped
     ports:
       - "9242:9042"
+    environment: *cassandra-environment
     depends_on:
       cassandra-node-1:
         condition: service_healthy
