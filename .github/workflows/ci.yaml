@@ -1,12 +1,12 @@
-name: CI 
+name: CI
 
-on: 
+on:
   push:
     branches:
       - main
       - develop
       - feature
-    
+
   pull_request:
     branches:
       - develop
@@ -23,37 +23,40 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        
+
       - name: Check docker compose
         working-directory: deployments
         run: docker compose config
-        
+
   docker:
     name: Docker
     runs-on: ubuntu-latest
-    needs: verify    
+    needs: verify
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        
+
       - name: Build Docker images
         working-directory: deployments
         run: docker compose build
-      
-      - name: "Start services"
-        working-directory: deployments        
-        run: docker compose up -d --wait
 
-      - name: "Show logs"
+      - name: Start services
+        working-directory: deployments
+        run: docker compose up -d
+
+      - name: Wait for startup
+        run: sleep 30
+
+      - name: Show services
+        working-directory: deployments
+        run: docker compose ps -a
+
+      - name: Show logs
         if: failure()
-        working-directory: deployments        
+        working-directory: deployments
         run: docker compose logs --no-color
-        
+
       - name: "Stop services"
         if: always()
-        working-directory: deployments        
-        run: docker compose down -v  
-
-    
-  
-    
+        working-directory: deployments
+        run: docker compose down -v
