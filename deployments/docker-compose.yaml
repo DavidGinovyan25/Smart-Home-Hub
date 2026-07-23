@@ -1,5 +1,24 @@
 name: smart-home-hub
 
+x-valkey-healthcheck: &valkey-healthcheck
+    test: ["CMD", "valkey-cli", "ping"]
+    interval: 5s
+    timeout: 5s
+    retries: 5  
+
+x-sentinel-healthcheck: &sentinel-healthcheck
+  test:
+    [
+      "CMD",
+      "valkey-cli",
+      "-p",
+      "26379",
+      "ping"
+    ]
+  interval: 5s
+  timeout: 5s
+  retries: 5  
+
 x-kafka-environment: &kafka-environment
   CLUSTER_ID: 5L6g3nShT-eMCtK--X86sw
   KAFKA_HEAP_OPTS: "-Xms256m -Xmx256m"
@@ -199,8 +218,122 @@ services:
       cassandra-net:
         ipv4_address: 172.28.0.13
     healthcheck: *cassandra-healthcheck
+
+  postgres:
+    image: postgres:16
+    container_name: postgres
+    hostname: postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    env_file:
+      - ./postgres/postgres.env
+    volumes:
+      - postgres-data:/var/lib/postresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d smarthome"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  valkey-master:
+    container_name: valkey-master
+    hostname: valkey-master
+    image: valkey/valkey:9.0-alpine
+    ports:
+      - "6379:6379"
+    command:
+      - valkey-server
+      - /etc/valkey/valkey.conf 
+    volumes:
+      - valkey-master:/data
+      - ./valkey/master/valkey.conf:/etc/valkey/valkey.conf 
+    networks:
+      valkey-net:
+    healthcheck: *valkey-healthcheck
+
+  valkey-replica-1:
+    image: valkey/valkey:9.0-alpine
+    container_name: valkey-replica-1
+    hostname: valkey-replica-1
+    ports:
+      - "6380:6379"
+    command:
+      - valkey-server
+      - /etc/valkey/valkey.conf 
+    volumes:
+      - valkey-replica-1:/data
+      - ./valkey/replica/valkey.conf:/etc/valkey/valkey.conf 
+    networks:
+      valkey-net:
+    healthcheck: *valkey-healthcheck
+    
+  valkey-replica-2:
+    image: valkey/valkey:9.0-alpine
+    container_name: valkey-replica-2
+    hostname: valkey-replica-2
+    ports:
+      - "6381:6379"
+    command:
+      - valkey-server
+      - /etc/valkey/valkey.conf 
+    volumes:
+      - valkey-replica-2:/data
+      - ./valkey/replica/valkey.conf:/etc/valkey/valkey.conf 
+    networks:
+      valkey-net:
+    healthcheck: *sentinel-healthcheck
+    
+  valkey-sentinel-1:  
+    image: valkey/valkey:9.0-alpine
+    container_name: valkey-sentinel-1
+    hostname: valkey-sentinel-1    
+    ports:
+      - "26379:26379"
+    command:
+      - valkey-sentinel
+      - /etc/valkey/sentinel.conf
+    volumes:
+      - valkey-sentinel-1:/data
+      - ./valkey/sentinel:/etc/valkey 
+    networks:
+      valkey-net:
+    healthcheck: *sentinel-healthcheck
+    
+  valkey-sentinel-2:  
+    image: valkey/valkey:9.0-alpine
+    container_name: valkey-sentinel-2
+    hostname: valkey-sentinel-2    
+    ports:
+      - "26380:26379"
+    command:
+      - valkey-sentinel
+      - /etc/valkey/sentinel.conf 
+    volumes:
+      - valkey-sentinel-2:/data
+      - ./valkey/sentinel:/etc/valkey
+    networks:
+      valkey-net:
+    healthcheck: *sentinel-healthcheck
+
+  valkey-sentinel-3: 
+    image: valkey/valkey:9.0-alpine
+    container_name: valkey-sentinel-3
+    hostname: valkey-sentinel-3    
+    ports:
+      - "26381:26379"
+    command:
+      - valkey-sentinel
+      - /etc/valkey/sentinel.conf 
+    volumes:
+      - valkey-sentinel-3:/data
+      - ./valkey/sentinel:/etc/valkey
+    networks:
+      valkey-net:
+    healthcheck: *sentinel-healthcheck
   
 networks:
+  valkey-net:
   kafka-net:
   mosquitto-net:
   cassandra-net:
@@ -217,3 +350,10 @@ volumes:
   cassandra-node-3:
   mqtt-data:
   mqtt-log:
+  postgres-data:
+  valkey-master:
+  valkey-replica-1:  
+  valkey-replica-2:  
+  valkey-sentinel-1:  
+  valkey-sentinel-2:  
+  valkey-sentinel-3:  
