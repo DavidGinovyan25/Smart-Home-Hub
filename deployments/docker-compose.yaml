@@ -1,5 +1,12 @@
 name: smart-home-hub
 
+x-mongo-healthcheck: &mongo-healthcheck
+  test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand({ ping: 1 })"]
+  interval: 10s
+  timeout: 5s
+  retries: 10
+  start_period: 10s
+
 x-valkey-healthcheck: &valkey-healthcheck
     test: ["CMD", "valkey-cli", "ping"]
     interval: 5s
@@ -48,48 +55,47 @@ x-cassandra-healthcheck: &cassandra-healthcheck
   retries: 15
 
 services:
-
-  kafka-node-1:
+  kafka-1:
     image: apache/kafka:4.3.1
-    container_name: kafka-node-1
-    hostname: kafka-node-1
+    container_name: kafka-1
+    hostname: kafka-1
     restart: unless-stopped
     environment: *kafka-environment
     ports:
       - "29092:29092"
     volumes:
       - ./kafka/node-1/server.properties:/mnt/shared/config/server.properties:ro
-      - kafka-node-1:/var/lib/kafka/data
+      - kafka-1:/var/lib/kafka/data
     networks:
       - kafka-net
     healthcheck: *kafka-healthcheck
 
-  kafka-node-2:
+  kafka-2:
     image: apache/kafka:4.3.1
-    container_name: kafka-node-2
-    hostname: kafka-node-2
+    container_name: kafka-2
+    hostname: kafka-2
     restart: unless-stopped
     environment: *kafka-environment
     ports:
       - "39092:29092"
     volumes:
       - ./kafka/node-2/server.properties:/mnt/shared/config/server.properties:ro
-      - kafka-node-2:/var/lib/kafka/data
+      - kafka-2:/var/lib/kafka/data
     networks:
       - kafka-net
     healthcheck: *kafka-healthcheck
 
-  kafka-node-3:
+  kafka-3:
     image: apache/kafka:4.3.1
-    container_name: kafka-node-3
-    hostname: kafka-node-3
+    container_name: kafka-3
+    hostname: kafka-3
     restart: unless-stopped
     environment: *kafka-environment
     ports:
       - "49092:29092"
     volumes:
       - ./kafka/node-3/server.properties:/mnt/shared/config/server.properties:ro
-      - kafka-node-3:/var/lib/kafka/data
+      - kafka-3:/var/lib/kafka/data
     networks:
       - kafka-net
     healthcheck: *kafka-healthcheck
@@ -98,11 +104,11 @@ services:
     image: apache/kafka:4.3.1
     container_name: kafka-init
     depends_on:
-      kafka-node-1:
+      kafka-1:
         condition: service_healthy
-      kafka-node-2:
+      kafka-2:
         condition: service_healthy
-      kafka-node-3:
+      kafka-3:
         condition: service_healthy
     volumes:
       - ./kafka/topics.sh:/topics.sh:ro
@@ -115,20 +121,18 @@ services:
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     container_name: kafka-ui
+    restart: unless-stopped
     ports:
       - "8080:8080"
     environment:
       KAFKA_CLUSTERS_0_NAME: smart-home-hub
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-node-1:9092,kafka-node-2:9092,kafka-node-3:9092
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-1:9092,kafka-2:9092,kafka-3:9092
     depends_on:
-      kafka-node-1:
-        condition: service_healthy
-      kafka-node-2:
-        condition: service_healthy
-      kafka-node-3:
+      kafka-1:
         condition: service_healthy
     networks:
       - kafka-net
+
 
   mqtt:
     image: eclipse-mosquitto:2
@@ -154,12 +158,13 @@ services:
     networks:
       - mosquitto-net
 
-  cassandra-node-1:
+
+  cassandra-1:
     image: cassandra:5.0
     user: cassandra
     entrypoint: ["cassandra", "-f"]
-    container_name: cassandra-node-1
-    hostname: cassandra-node-1
+    container_name: cassandra-1
+    hostname: cassandra-1
     restart: unless-stopped
     ports:
       - "9042:9042"
@@ -167,57 +172,56 @@ services:
     volumes:
       - ./cassandra/node-1/cassandra.yaml:/etc/cassandra/cassandra.yaml:ro
       - ./cassandra/cassandra-rackdc.properties:/etc/cassandra/cassandra-rackdc.properties:ro
-      - cassandra-node-1:/var/lib/cassandra
+      - cassandra-1:/var/lib/cassandra
     networks:
       cassandra-net:
         ipv4_address: 172.28.0.11
     healthcheck: *cassandra-healthcheck
 
-  cassandra-node-2:
+  cassandra-2:
     image: cassandra:5.0
     user: cassandra
     entrypoint: ["cassandra", "-f"]
-    container_name: cassandra-node-2
-    hostname: cassandra-node-2
+    container_name: cassandra-2
+    hostname: cassandra-2
     restart: unless-stopped
     ports:
       - "9142:9042"
     environment: *cassandra-environment
     depends_on:
-      cassandra-node-1:
+      cassandra-1:
         condition: service_healthy
     volumes:
       - ./cassandra/node-2/cassandra.yaml:/etc/cassandra/cassandra.yaml:ro
       - ./cassandra/cassandra-rackdc.properties:/etc/cassandra/cassandra-rackdc.properties:ro
-      - cassandra-node-2:/var/lib/cassandra
+      - cassandra-2:/var/lib/cassandra
     networks:
       cassandra-net:
         ipv4_address: 172.28.0.12
     healthcheck: *cassandra-healthcheck
 
-  cassandra-node-3:
+  cassandra-3:
     image: cassandra:5.0
     user: cassandra
     entrypoint: ["cassandra", "-f"]
-    container_name: cassandra-node-3
-    hostname: cassandra-node-3
+    container_name: cassandra-3
+    hostname: cassandra-3
     restart: unless-stopped
     ports:
       - "9242:9042"
     environment: *cassandra-environment
     depends_on:
-      cassandra-node-1:
-        condition: service_healthy
-      cassandra-node-2:
+      cassandra-1:
         condition: service_healthy
     volumes:
       - ./cassandra/node-3/cassandra.yaml:/etc/cassandra/cassandra.yaml:ro
       - ./cassandra/cassandra-rackdc.properties:/etc/cassandra/cassandra-rackdc.properties:ro
-      - cassandra-node-3:/var/lib/cassandra
+      - cassandra-3:/var/lib/cassandra
     networks:
       cassandra-net:
         ipv4_address: 172.28.0.13
     healthcheck: *cassandra-healthcheck
+
 
   postgres:
     image: postgres:16
@@ -229,17 +233,38 @@ services:
     env_file:
       - ./postgres/postgres.env
     volumes:
-      - postgres-data:/var/lib/postresql/data
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      postgres-net:
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d smarthome"]
       interval: 5s
       timeout: 5s
       retries: 5
 
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
+    ports:
+      - "5050:80"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+    networks:
+      postgres-net:
+      
+
   valkey-master:
     container_name: valkey-master
     hostname: valkey-master
     image: valkey/valkey:9.0-alpine
+    restart: unless-stopped
     ports:
       - "6379:6379"
     command:
@@ -256,6 +281,7 @@ services:
     image: valkey/valkey:9.0-alpine
     container_name: valkey-replica-1
     hostname: valkey-replica-1
+    restart: unless-stopped
     ports:
       - "6380:6379"
     command:
@@ -272,6 +298,7 @@ services:
     image: valkey/valkey:9.0-alpine
     container_name: valkey-replica-2
     hostname: valkey-replica-2
+    restart: unless-stopped
     ports:
       - "6381:6379"
     command:
@@ -282,12 +309,13 @@ services:
       - ./valkey/replica/valkey.conf:/etc/valkey/valkey.conf 
     networks:
       valkey-net:
-    healthcheck: *sentinel-healthcheck
+    healthcheck: *valkey-healthcheck
     
   valkey-sentinel-1:  
     image: valkey/valkey:9.0-alpine
     container_name: valkey-sentinel-1
-    hostname: valkey-sentinel-1    
+    hostname: valkey-sentinel-1   
+    restart: unless-stopped 
     ports:
       - "26379:26379"
     command:
@@ -304,6 +332,7 @@ services:
     image: valkey/valkey:9.0-alpine
     container_name: valkey-sentinel-2
     hostname: valkey-sentinel-2    
+    restart: unless-stopped
     ports:
       - "26380:26379"
     command:
@@ -320,6 +349,7 @@ services:
     image: valkey/valkey:9.0-alpine
     container_name: valkey-sentinel-3
     hostname: valkey-sentinel-3    
+    restart: unless-stopped
     ports:
       - "26381:26379"
     command:
@@ -331,8 +361,125 @@ services:
     networks:
       valkey-net:
     healthcheck: *sentinel-healthcheck
+
+  redis-insight:
+    image: redis/redisinsight:latest
+    container_name: redis-insight 
+    restart: unless-stopped
+    ports:
+      - "5540:5540"
+    depends_on:
+      valkey-master:
+        condition: service_healthy
+      valkey-replica-1:
+        condition: service_healthy        
+      valkey-replica-2:
+        condition: service_healthy        
+      valkey-sentinel-1:
+        condition: service_healthy        
+      valkey-sentinel-2:
+        condition: service_healthy        
+      valkey-sentinel-3:
+        condition: service_healthy        
+    volumes:
+      - redis-insight:/data 
+    networks:
+      valkey-net:
+
+    
+  mongo-1:
+    image: mongo:7.0
+    container_name: mongo-1
+    hostname: mongo-1
+    command:
+      - mongod
+      - --config
+      - /etc/mongod.conf
+    volumes:
+      - mongo-1:/data/db
+      - ./mongodb/node-1/mongod.conf:/etc/mongod.conf:ro
+    ports:
+      - "27017:27017"
+    healthcheck: *mongo-healthcheck
+    restart: unless-stopped
+    networks:
+      - mongo-net
+
+  mongo-2:
+    image: mongo:7.0
+    container_name: mongo-2
+    hostname: mongo-2
+    command:
+      - mongod
+      - --config
+      - /etc/mongod.conf
+    volumes:
+      - mongo-2:/data/db
+      - ./mongodb/node-2/mongod.conf:/etc/mongod.conf:ro
+    ports:
+      - "27018:27017"
+    healthcheck: *mongo-healthcheck
+    restart: unless-stopped
+    networks:
+      - mongo-net
+
+  mongo-3:
+    image: mongo:7.0
+    container_name: mongo-3
+    hostname: mongo-3
+    command:
+      - mongod
+      - --config
+      - /etc/mongod.conf
+    volumes:
+      - mongo-3:/data/db
+      - ./mongodb/node-3/mongod.conf:/etc/mongod.conf:ro
+    ports:
+      - "27019:27017"
+    healthcheck: *mongo-healthcheck
+    restart: unless-stopped
+    networks:
+      - mongo-net
+
+  mongo-init:
+    image: mongo:7.0
+    container_name: mongo-init 
+    depends_on:
+      mongo-1: 
+        condition: service_healthy 
+      mongo-2: 
+        condition: service_healthy 
+      mongo-3: 
+        condition: service_healthy 
+    command: 
+      - mongosh 
+      - mongodb://mongo-1:27017 
+      - /init.js
+    volumes:
+      - ./mongodb/init.js:/init.js:ro
+    networks: 
+      - mongo-net
+    
+  mongo-express:
+    image: mongo-express:1.0.2
+    container_name: mongo-express
+    depends_on:
+      mongo-1:
+        condition: service_healthy
+    environment:
+      ME_CONFIG_MONGODB_URL: mongodb://mongo-1:27017/?replicaSet=smart-home-rs
+      ME_CONFIG_BASICAUTH_USERNAME: ${ME_CONFIG_BASICAUTH_USERNAME}
+      ME_CONFIG_BASICAUTH_PASSWORD: ${ME_CONFIG_BASICAUTH_PASSWORD}
+    ports:
+      - "8081:8081"
+    restart: unless-stopped
+    networks: 
+      - mongo-net  
+
   
 networks:
+  mongo-net:
+  postgres-net:
   valkey-net:
   kafka-net:
   mosquitto-net:
@@ -342,18 +489,23 @@ networks:
         - subnet: 172.28.0.0/24
 
 volumes:
-  kafka-node-1:
-  kafka-node-2:
-  kafka-node-3:
-  cassandra-node-1:
-  cassandra-node-2:
-  cassandra-node-3:
+  mongo-1:
+  mongo-2:
+  mongo-3:
+  kafka-1:
+  kafka-2:
+  kafka-3:
+  cassandra-1:
+  cassandra-2:
+  cassandra-3:
   mqtt-data:
   mqtt-log:
   postgres-data:
+  pgadmin-data:
   valkey-master:
   valkey-replica-1:  
   valkey-replica-2:  
   valkey-sentinel-1:  
   valkey-sentinel-2:  
   valkey-sentinel-3:  
+  redis-insight:
